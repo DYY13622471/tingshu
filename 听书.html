@@ -1,0 +1,1683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#FBF8F4">
+    <title>听书 - 多格式文本朗读器</title>
+    <!-- 引入 mammoth.js 用于解析 DOCX -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <!-- 引入 pdf.js 用于解析 PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        :root {
+            --bg: #FBF8F4;
+            --card-bg: #FFFEF9;
+            --text: #3D3226;
+            --text-secondary: #6B5E52;
+            --highlight: #FFF3C4;
+            --highlight-border: #F0D78C;
+            --accent: #E07B5A;
+            --accent-hover: #C96B4D;
+            --accent-light: #FDE8E0;
+            --border: #E8E0D5;
+            --shadow: 0 2px 16px rgba(60, 40, 20, 0.08);
+            --shadow-lg: 0 8px 32px rgba(60, 40, 20, 0.12);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --radius-xs: 6px;
+            --font-size: 17px;
+            --line-height: 1.9;
+            --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            --safe-bottom: env(safe-area-inset-bottom, 16px);
+        }
+
+        [data-theme="dark"] {
+            --bg: #1A1A2E;
+            --card-bg: #222236;
+            --text: #D4C5B9;
+            --text-secondary: #9A8B80;
+            --highlight: #3D3528;
+            --highlight-border: #5A4D38;
+            --accent: #E8916A;
+            --accent-hover: #F0A080;
+            --accent-light: #3D2820;
+            --border: #333048;
+            --shadow: 0 2px 16px rgba(0, 0, 0, 0.25);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.35);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        html,
+        body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans SC', 'Source Han Sans CN', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            transition: background var(--transition), color var(--transition);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .app-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            gap: 12px;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+        .app-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .app-title .icon {
+            font-size: 24px;
+        }
+        .header-actions {
+            display: flex;
+            gap: 6px;
+        }
+        .btn-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: var(--card-bg);
+            color: var(--text-secondary);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition);
+            box-shadow: var(--shadow);
+            position: relative;
+        }
+        .btn-icon:active {
+            transform: scale(0.93);
+            background: var(--accent-light);
+        }
+        .btn-icon.active {
+            color: var(--accent);
+            background: var(--accent-light);
+        }
+
+        .file-drop-zone {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 16px;
+            border: 2.5px dashed var(--border);
+            border-radius: var(--radius);
+            background: var(--card-bg);
+            cursor: pointer;
+            transition: all var(--transition);
+            min-height: 220px;
+            gap: 16px;
+            box-shadow: var(--shadow);
+        }
+        .file-drop-zone:active,
+        .file-drop-zone.drag-over {
+            border-color: var(--accent);
+            background: var(--accent-light);
+            transform: scale(0.98);
+        }
+        .file-drop-zone .drop-icon {
+            font-size: 56px;
+            opacity: 0.7;
+        }
+        .file-drop-zone .drop-text {
+            font-size: 16px;
+            color: var(--text-secondary);
+            text-align: center;
+            line-height: 1.6;
+            padding: 0 20px;
+        }
+        .file-drop-zone .drop-hint {
+            font-size: 13px;
+            color: var(--text-secondary);
+            opacity: 0.6;
+        }
+        .btn-choose-file {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border-radius: 24px;
+            border: none;
+            background: var(--accent);
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition);
+            box-shadow: 0 4px 14px rgba(224, 123, 90, 0.35);
+            letter-spacing: 0.2px;
+        }
+        .btn-choose-file:active {
+            transform: scale(0.95);
+            background: var(--accent-hover);
+            box-shadow: 0 2px 8px rgba(224, 123, 90, 0.4);
+        }
+        #fileInput {
+            display: none;
+        }
+
+        .reader-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            margin: 0 16px;
+            border-radius: var(--radius);
+            background: var(--card-bg);
+            box-shadow: var(--shadow);
+            position: relative;
+        }
+        .reader-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .file-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chapter-indicator {
+            font-size: 11px;
+            color: var(--text-secondary);
+            background: var(--bg);
+            padding: 3px 10px;
+            border-radius: 12px;
+            white-space: nowrap;
+        }
+        .btn-small {
+            font-size: 12px;
+            padding: 6px 12px;
+            border-radius: 14px;
+            border: 1.5px solid var(--border);
+            background: var(--card-bg);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all var(--transition);
+            white-space: nowrap;
+            font-weight: 500;
+        }
+        .btn-small:active {
+            background: var(--accent-light);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        .btn-small.active {
+            background: var(--accent-light);
+            border-color: var(--accent);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .text-display-area {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 16px 18px;
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
+            line-height: var(--line-height);
+            font-size: var(--font-size);
+        }
+        .text-display-area .sentence {
+            display: inline;
+            padding: 2px 0;
+            border-radius: 3px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            -webkit-user-select: text;
+            user-select: text;
+        }
+        .text-display-area .sentence:hover {
+            background: rgba(224, 123, 90, 0.08);
+        }
+        .text-display-area .sentence.highlight {
+            background: var(--highlight);
+            border-radius: 4px;
+            padding: 2px 4px;
+            margin: 0 -2px;
+            box-shadow: 0 0 0 2px var(--highlight-border);
+            animation: highlightPulse 0.5s ease-out;
+            font-weight: 500;
+        }
+        @keyframes highlightPulse {
+            0% { box-shadow: 0 0 0 6px var(--highlight-border); opacity: 0.7; }
+            100% { box-shadow: 0 0 0 2px var(--highlight-border); opacity: 1; }
+        }
+        .text-display-area .paragraph-break {
+            display: block;
+            height: 0.8em;
+        }
+        .text-display-area .chapter-title-display {
+            display: block;
+            font-weight: 700;
+            font-size: 1.15em;
+            text-align: center;
+            margin: 1em 0 0.6em;
+            color: var(--accent);
+            letter-spacing: 1px;
+        }
+        .text-display-area::-webkit-scrollbar {
+            width: 3px;
+        }
+        .text-display-area::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .player-bar {
+            flex-shrink: 0;
+            background: var(--card-bg);
+            border-top: 1px solid var(--border);
+            padding: 10px 16px calc(10px + var(--safe-bottom));
+            border-radius: 0 0 var(--radius) var(--radius);
+            box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.04);
+        }
+        .progress-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .progress-time {
+            font-size: 11px;
+            color: var(--text-secondary);
+            min-width: 38px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+        }
+        .progress-bar-track {
+            flex: 1;
+            height: 5px;
+            background: var(--border);
+            border-radius: 3px;
+            cursor: pointer;
+            position: relative;
+            overflow: visible;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 3px;
+            transition: width 0.15s linear;
+            position: relative;
+        }
+        .progress-bar-fill::after {
+            content: '';
+            position: absolute;
+            right: -6px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 13px;
+            height: 13px;
+            background: var(--accent);
+            border-radius: 50%;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+            opacity: 0;
+            transition: opacity var(--transition);
+        }
+        .progress-bar-track:hover .progress-bar-fill::after,
+        .progress-bar-track:active .progress-bar-fill::after {
+            opacity: 1;
+        }
+        .controls-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .btn-control {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition);
+            font-size: 18px;
+            background: transparent;
+            color: var(--text-secondary);
+        }
+        .btn-control:active {
+            transform: scale(0.9);
+        }
+        .btn-play {
+            width: 58px;
+            height: 58px;
+            background: var(--accent);
+            color: #fff;
+            font-size: 22px;
+            box-shadow: 0 4px 16px rgba(224, 123, 90, 0.4);
+            border-radius: 50%;
+        }
+        .btn-play:active {
+            transform: scale(0.9);
+            background: var(--accent-hover);
+            box-shadow: 0 2px 8px rgba(224, 123, 90, 0.5);
+        }
+        .btn-play.paused-state {
+            background: var(--accent);
+            animation: playGlow 2s ease-in-out infinite;
+        }
+        @keyframes playGlow {
+            0%, 100% { box-shadow: 0 4px 16px rgba(224, 123, 90, 0.4); }
+            50% { box-shadow: 0 4px 24px rgba(224, 123, 90, 0.65); }
+        }
+        .speed-indicator {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent);
+            min-width: 36px;
+            text-align: center;
+            cursor: pointer;
+            padding: 4px 0;
+            border-radius: 8px;
+            transition: all var(--transition);
+        }
+        .speed-indicator:active {
+            background: var(--accent-light);
+        }
+
+        .settings-panel {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--card-bg);
+            border-radius: var(--radius) var(--radius) 0 0;
+            padding: 20px 16px calc(20px + var(--safe-bottom));
+            z-index: 20;
+            box-shadow: var(--shadow-lg);
+            transform: translateY(100%);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .settings-panel.open {
+            transform: translateY(0);
+        }
+        .settings-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 15;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity var(--transition);
+        }
+        .settings-overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            gap: 12px;
+        }
+        .settings-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            min-width: 50px;
+        }
+        .settings-value {
+            font-size: 12px;
+            color: var(--text-secondary);
+            min-width: 30px;
+            text-align: right;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--border);
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            border: 2px solid #fff;
+        }
+        select {
+            padding: 8px 12px;
+            border-radius: var(--radius-xs);
+            border: 1.5px solid var(--border);
+            background: var(--card-bg);
+            color: var(--text);
+            font-size: 13px;
+            font-family: inherit;
+            cursor: pointer;
+            flex: 1;
+            max-width: 180px;
+            -webkit-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B5E52' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 32px;
+        }
+        .sleep-timer-options {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .sleep-timer-chip {
+            padding: 7px 14px;
+            border-radius: 16px;
+            border: 1.5px solid var(--border);
+            background: var(--card-bg);
+            cursor: pointer;
+            font-size: 13px;
+            transition: all var(--transition);
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+        .sleep-timer-chip:active,
+        .sleep-timer-chip.active {
+            background: var(--accent-light);
+            border-color: var(--accent);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .sleep-countdown {
+            font-size: 12px;
+            color: var(--accent);
+            font-weight: 600;
+            text-align: center;
+            margin-top: 6px;
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-120px);
+            background: #333;
+            color: #fff;
+            padding: 10px 22px;
+            border-radius: 24px;
+            font-size: 14px;
+            z-index: 100;
+            pointer-events: none;
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+            font-weight: 500;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 380px) {
+            .btn-play { width: 50px; height: 50px; font-size: 20px; }
+            .btn-control { width: 38px; height: 38px; font-size: 16px; }
+            .text-display-area { padding: 12px 14px; font-size: 15px; }
+            .app-title { font-size: 17px; }
+        }
+        @media (min-width: 600px) {
+            .app-container {
+                border-left: 1px solid var(--border);
+                border-right: 1px solid var(--border);
+            }
+            .text-display-area { font-size: 18px; }
+        }
+    </style>
+</head>
+<body>
+<div class="app-container" id="appContainer">
+    <header class="app-header">
+        <div class="app-title">
+            <span class="icon">📖</span>听书
+        </div>
+        <div class="header-actions">
+            <button class="btn-icon" id="btnFontSize" title="调整字体">🔤</button>
+            <button class="btn-icon" id="btnTheme" title="切换主题">🌓</button>
+            <button class="btn-icon" id="btnSettings" title="设置">⚙️</button>
+        </div>
+    </header>
+
+    <div class="file-drop-zone" id="fileDropZone">
+        <span class="drop-icon">📂</span>
+        <span class="drop-text">点击选择或拖拽文件<br>支持 TXT、DOCX、PDF 文档</span>
+        <span class="drop-hint">DOC 格式请先转换为 DOCX 或 TXT</span>
+        <button class="btn-choose-file" id="btnChooseFile">📁 选择文档文件</button>
+        <input type="file" id="fileInput" accept=".txt,.doc,.docx,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword">
+    </div>
+
+    <div class="reader-container hidden" id="readerContainer">
+        <div class="reader-header">
+            <span class="file-name" id="fileNameDisplay">未命名文件</span>
+            <span class="chapter-indicator" id="chapterIndicator">第1章</span>
+            <button class="btn-small" id="btnPrevChapter">◀ 上一章</button>
+            <button class="btn-small" id="btnNextChapter">下一章 ▶</button>
+            <button class="btn-small" id="btnChangeFile">📂 换书</button>
+        </div>
+        <div class="text-display-area" id="textDisplayArea">
+            <div style="text-align:center;color:var(--text-secondary);padding:40px 20px;">请选择文档开始听书</div>
+        </div>
+        <div class="player-bar">
+            <div class="progress-row">
+                <span class="progress-time" id="progressCurrent">00:00</span>
+                <div class="progress-bar-track" id="progressTrack">
+                    <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+                </div>
+                <span class="progress-time" id="progressTotal">00:00</span>
+            </div>
+            <div class="controls-row">
+                <button class="btn-control" id="btnStop" title="停止">⏹️</button>
+                <button class="btn-control" id="btnPrev" title="上一句">⏮️</button>
+                <button class="btn-play" id="btnPlay" title="播放">▶️</button>
+                <button class="btn-control" id="btnNext" title="下一句">⏭️</button>
+                <span class="speed-indicator" id="speedIndicator" title="点击切换语速">1.0x</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-overlay" id="settingsOverlay"></div>
+    <div class="settings-panel" id="settingsPanel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <strong style="font-size:16px;">⚙️ 播放设置</strong>
+            <button class="btn-small" id="btnCloseSettings">✕ 关闭</button>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">语速</span>
+            <input type="range" id="speedSlider" min="0.4" max="2.5" step="0.05" value="1.0">
+            <span class="settings-value" id="speedValue">1.0x</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">音量</span>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="0.9">
+            <span class="settings-value" id="volumeValue">90%</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">音调</span>
+            <input type="range" id="pitchSlider" min="0.5" max="2" step="0.05" value="1.0">
+            <span class="settings-value" id="pitchValue">1.0</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">语音</span>
+            <select id="voiceSelect">
+                <option value="">自动选择中文语音</option>
+            </select>
+        </div>
+        <div class="settings-row" style="flex-wrap:wrap;">
+            <span class="settings-label">定时关闭</span>
+            <div class="sleep-timer-options" id="sleepTimerOptions">
+                <span class="sleep-timer-chip" data-minutes="0">关闭</span>
+                <span class="sleep-timer-chip" data-minutes="15">15分钟</span>
+                <span class="sleep-timer-chip" data-minutes="30">30分钟</span>
+                <span class="sleep-timer-chip" data-minutes="60">60分钟</span>
+            </div>
+        </div>
+        <div class="sleep-countdown hidden" id="sleepCountdown"></div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+</div>
+
+<script>
+    (function() {
+        // 设置 pdf.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // DOM 引用
+        const appContainer = document.getElementById('appContainer');
+        const fileDropZone = document.getElementById('fileDropZone');
+        const fileInput = document.getElementById('fileInput');
+        const btnChooseFile = document.getElementById('btnChooseFile');
+        const readerContainer = document.getElementById('readerContainer');
+        const textDisplayArea = document.getElementById('textDisplayArea');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const chapterIndicator = document.getElementById('chapterIndicator');
+        const btnPrevChapter = document.getElementById('btnPrevChapter');
+        const btnNextChapter = document.getElementById('btnNextChapter');
+        const btnChangeFile = document.getElementById('btnChangeFile');
+        const btnPlay = document.getElementById('btnPlay');
+        const btnStop = document.getElementById('btnStop');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+        const speedIndicator = document.getElementById('speedIndicator');
+        const progressFill = document.getElementById('progressFill');
+        const progressTrack = document.getElementById('progressTrack');
+        const progressCurrent = document.getElementById('progressCurrent');
+        const progressTotal = document.getElementById('progressTotal');
+        const settingsOverlay = document.getElementById('settingsOverlay');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const btnSettings = document.getElementById('btnSettings');
+        const btnCloseSettings = document.getElementById('btnCloseSettings');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
+        const volumeSlider = document.getElementById('volumeSlider');
+        const volumeValue = document.getElementById('volumeValue');
+        const pitchSlider = document.getElementById('pitchSlider');
+        const pitchValue = document.getElementById('pitchValue');
+        const voiceSelect = document.getElementById('voiceSelect');
+        const sleepTimerOptions = document.getElementById('sleepTimerOptions');
+        const sleepCountdown = document.getElementById('sleepCountdown');
+        const btnTheme = document.getElementById('btnTheme');
+        const btnFontSize = document.getElementById('btnFontSize');
+        const toast = document.getElementById('toast');
+
+        // 状态变量
+        let allSentences = [];
+        let chapters = [];
+        let currentChapterIndex = 0;
+        let currentSentenceIndex = -1;
+        let isPlaying = false;
+        let isPaused = false;
+        let speechRate = 1.0;
+        let speechVolume = 0.9;
+        let speechPitch = 1.0;
+        let selectedVoice = null;
+        let availableVoices = [];
+        let sleepTimerMinutes = 0;
+        let sleepTimerInterval = null;
+        let sleepTimerEndTime = null;
+        let wakeLock = null;
+        let currentFileName = '';
+        let fontSizeStep = 0;
+        const fontSizes = [13, 14, 15, 16, 17, 18, 20, 22, 24];
+        let isDarkMode = false;
+        let userScrolling = false;
+        let scrollTimeout = null;
+        let totalEstimatedDuration = 0;
+
+        // ────────────────────────── 初始化 ──────────────────────────
+        function init() {
+            loadPreferences();
+            loadVoices();
+            setupEventListeners();
+            updateThemeUI();
+            updateFontSizeUI();
+            updateSpeedUI();
+            updateVolumeUI();
+            updatePitchUI();
+            updateSleepTimerUI();
+            checkCachedFile();
+        }
+
+        function loadPreferences() {
+            try {
+                const prefs = JSON.parse(localStorage.getItem('tingShu_prefs') || '{}');
+                speechRate = prefs.speechRate || 1.0;
+                speechVolume = prefs.speechVolume ?? 0.9;
+                speechPitch = prefs.speechPitch || 1.0;
+                isDarkMode = prefs.isDarkMode || false;
+                fontSizeStep = prefs.fontSizeStep || 0;
+                sleepTimerMinutes = prefs.sleepTimerMinutes || 0;
+                if (prefs.selectedVoiceURI) {
+                    selectedVoice = { uri: prefs.selectedVoiceURI, name: prefs.selectedVoiceName || '' };
+                }
+            } catch (e) {}
+            if (isDarkMode) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
+            speedSlider.value = speechRate;
+            volumeSlider.value = speechVolume;
+            pitchSlider.value = speechPitch;
+        }
+
+        function savePreferences() {
+            try {
+                const prefs = {
+                    speechRate, speechVolume, speechPitch,
+                    isDarkMode, fontSizeStep, sleepTimerMinutes,
+                    selectedVoiceURI: selectedVoice ? selectedVoice.uri : null,
+                    selectedVoiceName: selectedVoice ? selectedVoice.name : null,
+                };
+                localStorage.setItem('tingShu_prefs', JSON.stringify(prefs));
+            } catch (e) {}
+        }
+
+        function checkCachedFile() {
+            try {
+                const cached = JSON.parse(localStorage.getItem('tingShu_cachedFile') || 'null');
+                if (cached && cached.fileName && cached.content && cached.content.length > 100) {
+                    currentFileName = cached.fileName;
+                    const content = cached.content;
+                    const lastIndex = cached.lastSentenceIndex || 0;
+                    const lastChapter = cached.lastChapterIndex || 0;
+                    processTextContent(content, currentFileName);
+                    if (lastChapter < chapters.length && lastIndex < allSentences.length) {
+                        currentChapterIndex = lastChapter;
+                        currentSentenceIndex = lastIndex;
+                        updateChapterUI();
+                        renderText();
+                        scrollToSentence(currentSentenceIndex);
+                        highlightSentence(currentSentenceIndex);
+                        updateProgressUI();
+                    }
+                    showReader();
+                    showToast('📖 已恢复上次阅读位置');
+                }
+            } catch (e) {}
+        }
+
+        function cacheCurrentFile() {
+            if (!currentFileName || allSentences.length === 0) return;
+            try {
+                const content = allSentences.map(s => s.text).join('');
+                const cached = {
+                    fileName: currentFileName,
+                    content: content,
+                    lastSentenceIndex: currentSentenceIndex >= 0 ? currentSentenceIndex : 0,
+                    lastChapterIndex: currentChapterIndex,
+                    timestamp: Date.now(),
+                };
+                const jsonStr = JSON.stringify(cached);
+                if (jsonStr.length < 4 * 1024 * 1024) {
+                    localStorage.setItem('tingShu_cachedFile', jsonStr);
+                } else {
+                    const lightCache = {
+                        fileName: currentFileName,
+                        content: content.substring(0, 50000),
+                        lastSentenceIndex: currentSentenceIndex >= 0 ? currentSentenceIndex : 0,
+                        lastChapterIndex: currentChapterIndex,
+                        timestamp: Date.now(),
+                        truncated: true,
+                    };
+                    localStorage.setItem('tingShu_cachedFile', JSON.stringify(lightCache));
+                }
+            } catch (e) {
+                try {
+                    const lightCache = {
+                        fileName: currentFileName,
+                        content: allSentences.slice(0, 300).map(s => s.text).join(''),
+                        lastSentenceIndex: currentSentenceIndex >= 0 ? currentSentenceIndex : 0,
+                        lastChapterIndex: currentChapterIndex,
+                        timestamp: Date.now(),
+                        truncated: true,
+                    };
+                    localStorage.setItem('tingShu_cachedFile', JSON.stringify(lightCache));
+                } catch (e2) {
+                    localStorage.removeItem('tingShu_cachedFile');
+                }
+            }
+        }
+
+        function loadVoices() {
+            const voices = speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                availableVoices = voices;
+                populateVoiceSelect();
+            }
+            speechSynthesis.onvoiceschanged = () => {
+                availableVoices = speechSynthesis.getVoices();
+                populateVoiceSelect();
+            };
+        }
+
+        function populateVoiceSelect() {
+            voiceSelect.innerHTML = '<option value="">自动选择中文语音</option>';
+            const zhVoices = availableVoices.filter(v =>
+                v.lang.startsWith('zh') || v.lang.includes('Chinese') || v.lang.includes('Mandarin')
+            );
+            if (zhVoices.length > 0) {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = '中文语音';
+                zhVoices.forEach(v => {
+                    const opt = document.createElement('option');
+                    opt.value = v.voiceURI;
+                    opt.textContent = `${v.name} (${v.lang})`;
+                    if (selectedVoice && selectedVoice.uri === v.voiceURI) opt.selected = true;
+                    optgroup.appendChild(opt);
+                });
+                voiceSelect.appendChild(optgroup);
+            }
+            if (selectedVoice && selectedVoice.uri) {
+                voiceSelect.value = selectedVoice.uri;
+            }
+        }
+
+        function getBestVoice() {
+            if (selectedVoice && selectedVoice.uri && availableVoices.length > 0) {
+                const found = availableVoices.find(v => v.voiceURI === selectedVoice.uri);
+                if (found) return found;
+            }
+            const zhVoices = availableVoices.filter(v => v.lang.startsWith('zh') || v.lang.includes('Chinese'));
+            if (zhVoices.length > 0) {
+                return zhVoices.find(v => v.lang === 'zh-CN') || zhVoices[0];
+            }
+            return availableVoices.find(v => v.default) || availableVoices[0] || null;
+        }
+
+        // ────────────────────────── 事件绑定 ──────────────────────────
+        function setupEventListeners() {
+            btnChooseFile.addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
+            fileDropZone.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', handleFileSelect);
+            fileDropZone.addEventListener('dragover', (e) => { e.preventDefault(); fileDropZone.classList.add('drag-over'); });
+            fileDropZone.addEventListener('dragleave', () => fileDropZone.classList.remove('drag-over'));
+            fileDropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                fileDropZone.classList.remove('drag-over');
+                const file = e.dataTransfer.files[0];
+                if (file) processFile(file);
+            });
+
+            btnPlay.addEventListener('click', togglePlay);
+            btnStop.addEventListener('click', stopPlayback);
+            btnPrev.addEventListener('click', playPrevious);
+            btnNext.addEventListener('click', playNext);
+            btnPrevChapter.addEventListener('click', goToPrevChapter);
+            btnNextChapter.addEventListener('click', goToNextChapter);
+            btnChangeFile.addEventListener('click', () => { stopPlayback(); showFileDropZone(); });
+            speedIndicator.addEventListener('click', cycleSpeed);
+            progressTrack.addEventListener('click', (e) => {
+                if (allSentences.length === 0) return;
+                const rect = progressTrack.getBoundingClientRect();
+                const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                const targetIndex = Math.floor(ratio * (allSentences.length - 1));
+                jumpToSentence(targetIndex);
+            });
+
+            btnSettings.addEventListener('click', openSettings);
+            btnCloseSettings.addEventListener('click', closeSettings);
+            settingsOverlay.addEventListener('click', closeSettings);
+            speedSlider.addEventListener('input', () => {
+                speechRate = parseFloat(speedSlider.value);
+                updateSpeedUI(); savePreferences();
+                if (isPlaying && !isPaused) restartCurrentUtterance();
+            });
+            volumeSlider.addEventListener('input', () => {
+                speechVolume = parseFloat(volumeSlider.value);
+                updateVolumeUI(); savePreferences();
+            });
+            pitchSlider.addEventListener('input', () => {
+                speechPitch = parseFloat(pitchSlider.value);
+                updatePitchUI(); savePreferences();
+                if (isPlaying && !isPaused) restartCurrentUtterance();
+            });
+            voiceSelect.addEventListener('change', () => {
+                const uri = voiceSelect.value;
+                selectedVoice = uri ? (availableVoices.find(v => v.voiceURI === uri) || { uri, name: '' }) : null;
+                savePreferences();
+                if (isPlaying && !isPaused) restartCurrentUtterance();
+            });
+            sleepTimerOptions.addEventListener('click', (e) => {
+                const chip = e.target.closest('.sleep-timer-chip');
+                if (!chip) return;
+                setSleepTimer(parseInt(chip.dataset.minutes));
+            });
+            btnTheme.addEventListener('click', toggleTheme);
+            btnFontSize.addEventListener('click', cycleFontSize);
+
+            textDisplayArea.addEventListener('scroll', () => {
+                if (isPlaying && !isPaused) {
+                    userScrolling = true;
+                    if (scrollTimeout) clearTimeout(scrollTimeout);
+                    scrollTimeout = setTimeout(() => { userScrolling = false; }, 3000);
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+                switch (e.key) {
+                    case ' ': e.preventDefault(); togglePlay(); break;
+                    case 'ArrowLeft': e.preventDefault(); playPrevious(); break;
+                    case 'ArrowRight': e.preventDefault(); playNext(); break;
+                    case 'Escape': stopPlayback(); break;
+                }
+            });
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) releaseWakeLock();
+                else if (isPlaying && !isPaused) requestWakeLock();
+            });
+            window.addEventListener('beforeunload', () => { cacheCurrentFile(); releaseWakeLock(); });
+        }
+
+        // ────────────────────────── 文件处理（多格式） ──────────────────────────
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) processFile(file);
+            fileInput.value = '';
+        }
+
+        async function processFile(file) {
+            const fileName = file.name;
+            const ext = fileName.split('.').pop().toLowerCase();
+            const mimeType = file.type;
+
+            showToast('📄 正在解析文档...');
+
+            try {
+                let extractedText = '';
+
+                if (ext === 'txt' || mimeType === 'text/plain' || (!mimeType && ext === 'txt')) {
+                    // TXT 文件：读取文本
+                    extractedText = await readFileAsText(file);
+                } else if (ext === 'docx' || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                    // DOCX 文件：使用 mammoth.js
+                    const arrayBuffer = await readFileAsArrayBuffer(file);
+                    const result = await mammoth.extractRawText({ arrayBuffer });
+                    extractedText = result.value;
+                    if (!extractedText.trim()) throw new Error('未能从 DOCX 中提取到文字');
+                } else if (ext === 'pdf' || mimeType === 'application/pdf') {
+                    // PDF 文件：使用 pdf.js
+                    const arrayBuffer = await readFileAsArrayBuffer(file);
+                    extractedText = await extractTextFromPDF(arrayBuffer);
+                    if (!extractedText.trim()) throw new Error('未能从 PDF 中提取到文字（可能是扫描版图片）');
+                } else if (ext === 'doc' || mimeType === 'application/msword') {
+                    // DOC 文件：尝试用 mammoth 解析，如果不支持则提示
+                    try {
+                        const arrayBuffer = await readFileAsArrayBuffer(file);
+                        const result = await mammoth.extractRawText({ arrayBuffer });
+                        extractedText = result.value;
+                        if (!extractedText.trim()) throw new Error('DOC 文件内容为空或无法识别');
+                    } catch (docErr) {
+                        showToast('⚠️ 旧版 .doc 格式支持有限，请转换为 .docx 或 .txt 后再试');
+                        return;
+                    }
+                } else {
+                    showToast('❌ 不支持的文件格式，请选择 TXT、DOCX 或 PDF');
+                    return;
+                }
+
+                if (!extractedText || extractedText.trim().length < 5) {
+                    showToast('⚠️ 文档内容过短，请检查文件');
+                    return;
+                }
+
+                currentFileName = fileName;
+                processTextContent(extractedText, fileName);
+                showReader();
+                showToast('✅ 文档加载成功');
+            } catch (err) {
+                console.error('文件解析错误:', err);
+                showToast('❌ 文档解析失败：' + (err.message || '未知错误'));
+            }
+        }
+
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsText(file, 'UTF-8');
+            });
+        }
+
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        async function extractTextFromPDF(arrayBuffer) {
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                const pageText = content.items.map(item => item.str).join(' ');
+                fullText += pageText + '\n';
+            }
+            return fullText.trim();
+        }
+
+        // ────────────────────────── 文本处理（同原版） ──────────────────────────
+        function processTextContent(content, fileName) {
+            content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            const rawParagraphs = content.split('\n');
+            allSentences = [];
+            chapters = [];
+            let currentChapIndex = -1;
+            const chapterPatterns = [
+                /^第[一二三四五六七八九十百千\d]+章\s*.*$/,
+                /^第[一二三四五六七八九十百千\d]+节\s*.*$/,
+                /^Chapter\s*\d+\s*.*$/i,
+                /^Part\s*\d+\s*.*$/i,
+                /^[【\[]第[一二三四五六七八九十百千\d]+[章节][】\]].*$/,
+                /^[#＃]\s*第[一二三四五六七八九十百千\d]+[章节].*$/,
+                /^[#＃]\s*\d+\s*.*$/,
+                /^第[一二三四五六七八九十百千\d]+回\s*.*$/,
+                /^卷[一二三四五六七八九十百千\d]+\s*.*$/,
+            ];
+
+            for (let i = 0; i < rawParagraphs.length; i++) {
+                const line = rawParagraphs[i].trim();
+                if (!line) {
+                    if (allSentences.length > 0 && !allSentences[allSentences.length - 1].isParagraphBreak) {
+                        allSentences.push({ text: '', chapterIndex: currentChapIndex, isChapterTitle: false, isParagraphBreak: true });
+                    }
+                    continue;
+                }
+
+                let isChapterTitle = false;
+                for (const pattern of chapterPatterns) {
+                    if (pattern.test(line)) { isChapterTitle = true; break; }
+                }
+
+                if (isChapterTitle && line.length < 80) {
+                    currentChapIndex++;
+                    chapters.push({ title: line, startIndex: allSentences.length });
+                    allSentences.push({ text: line, chapterIndex: currentChapIndex, isChapterTitle: true, isParagraphBreak: false });
+                    continue;
+                }
+
+                if (currentChapIndex === -1) {
+                    currentChapIndex = 0;
+                    chapters.push({ title: '正文', startIndex: 0 });
+                }
+
+                const sentences = splitIntoSentences(line);
+                for (const sent of sentences) {
+                    if (sent.trim()) {
+                        allSentences.push({ text: sent, chapterIndex: currentChapIndex, isChapterTitle: false, isParagraphBreak: false });
+                    }
+                }
+                if (sentences.length > 0 && i < rawParagraphs.length - 1) {
+                    allSentences.push({ text: '', chapterIndex: currentChapIndex, isChapterTitle: false, isParagraphBreak: true });
+                }
+            }
+
+            if (chapters.length === 0) {
+                chapters.push({ title: '正文', startIndex: 0 });
+                if (allSentences.length === 0 && content.trim()) {
+                    const sentences = splitIntoSentences(content.trim());
+                    for (const sent of sentences) {
+                        if (sent.trim()) allSentences.push({ text: sent, chapterIndex: 0, isChapterTitle: false, isParagraphBreak: false });
+                    }
+                }
+            }
+
+            for (let i = 0; i < allSentences.length; i++) {
+                if (allSentences[i].chapterIndex < 0) {
+                    let chapIdx = 0;
+                    for (let c = chapters.length - 1; c >= 0; c--) {
+                        if (i >= chapters[c].startIndex) { chapIdx = c; break; }
+                    }
+                    allSentences[i].chapterIndex = chapIdx;
+                }
+            }
+
+            currentChapterIndex = 0;
+            currentSentenceIndex = 0;
+            totalEstimatedDuration = estimateTotalDuration();
+            fileNameDisplay.textContent = fileName || '未命名文件';
+            updateChapterUI();
+            renderText();
+            updateProgressUI();
+            highlightSentence(0);
+            scrollToSentence(0);
+            cacheCurrentFile();
+        }
+
+        function splitIntoSentences(text) {
+            if (!text || text.length < 3) return [text];
+            const parts = text.split(/(?<=[。！？；!?;…\.\n])/);
+            const result = [];
+            for (const part of parts) {
+                const trimmed = part.trim();
+                if (trimmed) result.push(trimmed);
+            }
+            if (result.length === 0 && text.trim()) return [text.trim()];
+            const merged = [];
+            let buffer = '';
+            for (const part of result) {
+                if (buffer && (buffer.length + part.length < 25 || !/[。！？!?…\.]$/.test(buffer))) {
+                    buffer += part;
+                } else if (buffer) {
+                    merged.push(buffer);
+                    buffer = part;
+                } else {
+                    buffer = part;
+                }
+            }
+            if (buffer) merged.push(buffer);
+            return merged.length > 0 ? merged : [text.trim()];
+        }
+
+        function estimateTotalDuration() {
+            let totalChars = 0;
+            for (const s of allSentences) {
+                if (!s.isParagraphBreak) totalChars += s.text.length;
+            }
+            return Math.max(1, Math.round(totalChars * 0.3 / speechRate));
+        }
+
+        // ────────────────────────── 渲染与播放（同原版） ──────────────────────────
+        function renderText() {
+            textDisplayArea.innerHTML = '';
+            if (allSentences.length === 0) {
+                textDisplayArea.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:40px 20px;">文本为空</div>';
+                return;
+            }
+            const fragment = document.createDocumentFragment();
+            for (let i = 0; i < allSentences.length; i++) {
+                const s = allSentences[i];
+                if (s.isParagraphBreak) {
+                    const br = document.createElement('span');
+                    br.className = 'paragraph-break';
+                    br.dataset.index = i;
+                    fragment.appendChild(br);
+                } else if (s.isChapterTitle) {
+                    const div = document.createElement('span');
+                    div.className = 'chapter-title-display sentence';
+                    div.dataset.index = i;
+                    div.textContent = s.text;
+                    fragment.appendChild(div);
+                } else {
+                    const span = document.createElement('span');
+                    span.className = 'sentence';
+                    span.dataset.index = i;
+                    span.textContent = s.text;
+                    span.addEventListener('click', () => jumpToSentence(i));
+                    fragment.appendChild(span);
+                }
+            }
+            textDisplayArea.appendChild(fragment);
+        }
+
+        function highlightSentence(index) {
+            textDisplayArea.querySelectorAll('.sentence.highlight').forEach(el => el.classList.remove('highlight'));
+            if (index >= 0 && index < allSentences.length) {
+                const el = textDisplayArea.querySelector(`.sentence[data-index="${index}"]`);
+                if (el) el.classList.add('highlight');
+            }
+        }
+
+        function scrollToSentence(index) {
+            if (userScrolling && isPlaying) return;
+            if (index < 0 || index >= allSentences.length) return;
+            const el = textDisplayArea.querySelector(`.sentence[data-index="${index}"]`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function updateChapterUI() {
+            if (chapters.length > 0 && currentChapterIndex < chapters.length) {
+                chapterIndicator.textContent = chapters[currentChapterIndex].title;
+            } else {
+                chapterIndicator.textContent = '正文';
+            }
+            btnPrevChapter.style.opacity = currentChapterIndex > 0 ? '1' : '0.4';
+            btnNextChapter.style.opacity = currentChapterIndex < chapters.length - 1 ? '1' : '0.4';
+        }
+
+        function updateProgressUI() {
+            if (allSentences.length === 0) {
+                progressFill.style.width = '0%';
+                progressCurrent.textContent = '00:00';
+                progressTotal.textContent = '00:00';
+                return;
+            }
+            const ratio = Math.max(0, Math.min(1, currentSentenceIndex / Math.max(1, allSentences.length - 1)));
+            progressFill.style.width = (ratio * 100) + '%';
+            const elapsedEstimate = ratio * totalEstimatedDuration;
+            progressCurrent.textContent = formatTime(elapsedEstimate);
+            progressTotal.textContent = formatTime(totalEstimatedDuration);
+        }
+
+        function formatTime(seconds) {
+            if (!isFinite(seconds) || seconds < 0) return '00:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+        }
+
+        function showReader() {
+            fileDropZone.classList.add('hidden');
+            readerContainer.classList.remove('hidden');
+        }
+
+        function showFileDropZone() {
+            readerContainer.classList.add('hidden');
+            fileDropZone.classList.remove('hidden');
+            allSentences = [];
+            chapters = [];
+            currentChapterIndex = 0;
+            currentSentenceIndex = -1;
+            isPlaying = false;
+            isPaused = false;
+            updatePlayButtonUI();
+            textDisplayArea.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:40px 20px;">请选择文档开始听书</div>';
+            progressFill.style.width = '0%';
+            progressCurrent.textContent = '00:00';
+            progressTotal.textContent = '00:00';
+            chapterIndicator.textContent = '第1章';
+            fileNameDisplay.textContent = '未命名文件';
+            releaseWakeLock();
+            localStorage.removeItem('tingShu_cachedFile');
+        }
+
+        // 播放控制（保持原有逻辑不变）
+        function togglePlay() {
+            if (allSentences.length === 0) { showToast('⚠️ 请先选择文档'); return; }
+            if (isPlaying && !isPaused) pausePlayback();
+            else if (isPaused) resumePlayback();
+            else startPlayback();
+        }
+
+        function startPlayback(fromIndex = null) {
+            if (allSentences.length === 0) return;
+            if (fromIndex !== null) {
+                currentSentenceIndex = fromIndex;
+                if (currentSentenceIndex >= 0 && currentSentenceIndex < allSentences.length) {
+                    const chapIdx = allSentences[currentSentenceIndex].chapterIndex;
+                    if (chapIdx >= 0 && chapIdx < chapters.length && chapIdx !== currentChapterIndex) {
+                        currentChapterIndex = chapIdx;
+                        updateChapterUI();
+                    }
+                }
+            }
+            if (currentSentenceIndex < 0) currentSentenceIndex = 0;
+            if (currentSentenceIndex >= allSentences.length) currentSentenceIndex = 0;
+            while (currentSentenceIndex < allSentences.length && allSentences[currentSentenceIndex].isParagraphBreak) currentSentenceIndex++;
+            if (currentSentenceIndex >= allSentences.length) { stopPlayback(); showToast('✅ 已朗读完毕'); return; }
+            isPlaying = true;
+            isPaused = false;
+            updatePlayButtonUI();
+            highlightSentence(currentSentenceIndex);
+            scrollToSentence(currentSentenceIndex);
+            updateProgressUI();
+            updateChapterUI();
+            speakCurrentSentence();
+            requestWakeLock();
+        }
+
+        function pausePlayback() {
+            isPaused = true;
+            updatePlayButtonUI();
+            speechSynthesis.pause();
+            releaseWakeLock();
+            cacheCurrentFile();
+        }
+
+        function resumePlayback() {
+            isPaused = false;
+            updatePlayButtonUI();
+            speechSynthesis.resume();
+            requestWakeLock();
+            scrollToSentence(currentSentenceIndex);
+        }
+
+        function stopPlayback() {
+            speechSynthesis.cancel();
+            isPlaying = false;
+            isPaused = false;
+            updatePlayButtonUI();
+            highlightSentence(-1);
+            releaseWakeLock();
+            cacheCurrentFile();
+        }
+
+        function speakCurrentSentence() {
+            if (!isPlaying || isPaused) return;
+            if (currentSentenceIndex >= allSentences.length) { stopPlayback(); showToast('✅ 朗读完毕'); return; }
+            if (allSentences[currentSentenceIndex].isParagraphBreak) {
+                currentSentenceIndex++;
+                if (currentSentenceIndex >= allSentences.length) { stopPlayback(); showToast('✅ 朗读完毕'); return; }
+            }
+            const sentence = allSentences[currentSentenceIndex];
+            if (sentence.chapterIndex !== currentChapterIndex && sentence.chapterIndex >= 0 && sentence.chapterIndex < chapters.length) {
+                currentChapterIndex = sentence.chapterIndex;
+                updateChapterUI();
+            }
+            highlightSentence(currentSentenceIndex);
+            scrollToSentence(currentSentenceIndex);
+            updateProgressUI();
+
+            const utterance = new SpeechSynthesisUtterance(sentence.text);
+            utterance.rate = speechRate;
+            utterance.volume = speechVolume;
+            utterance.pitch = speechPitch;
+            const voice = getBestVoice();
+            if (voice) utterance.voice = voice;
+
+            utterance.onend = () => {
+                if (!isPlaying) return;
+                currentSentenceIndex++;
+                if (currentSentenceIndex % 50 === 0) cacheCurrentFile();
+                if (currentSentenceIndex >= allSentences.length) { stopPlayback(); showToast('✅ 朗读完毕'); cacheCurrentFile(); return; }
+                if (sleepTimerMinutes > 0 && sleepTimerEndTime && Date.now() >= sleepTimerEndTime) {
+                    stopPlayback(); setSleepTimer(0); showToast('⏰ 定时关闭已触发'); return;
+                }
+                speakCurrentSentence();
+            };
+            utterance.onerror = (e) => {
+                console.warn('Speech error:', e.error);
+                if (e.error === 'canceled' || e.error === 'interrupted') return;
+                if (isPlaying && !isPaused) {
+                    currentSentenceIndex++;
+                    if (currentSentenceIndex < allSentences.length) setTimeout(() => speakCurrentSentence(), 300);
+                    else stopPlayback();
+                }
+            };
+            speechSynthesis.speak(utterance);
+        }
+
+        function restartCurrentUtterance() {
+            if (!isPlaying || isPaused) return;
+            speechSynthesis.cancel();
+            setTimeout(() => { if (isPlaying && !isPaused) speakCurrentSentence(); }, 50);
+        }
+
+        function playPrevious() {
+            if (allSentences.length === 0) return;
+            speechSynthesis.cancel();
+            let target = currentSentenceIndex - 1;
+            while (target >= 0 && allSentences[target].isParagraphBreak) target--;
+            if (target < 0) target = 0;
+            if (target >= 0 && allSentences[target].chapterIndex !== currentChapterIndex) {
+                currentChapterIndex = allSentences[target].chapterIndex;
+                updateChapterUI();
+            }
+            currentSentenceIndex = target;
+            if (isPlaying) setTimeout(() => speakCurrentSentence(), 60);
+            else { highlightSentence(currentSentenceIndex); scrollToSentence(currentSentenceIndex); updateProgressUI(); }
+        }
+
+        function playNext() {
+            if (allSentences.length === 0) return;
+            speechSynthesis.cancel();
+            let target = currentSentenceIndex + 1;
+            while (target < allSentences.length && allSentences[target].isParagraphBreak) target++;
+            if (target >= allSentences.length) target = allSentences.length - 1;
+            if (target >= 0 && allSentences[target].chapterIndex !== currentChapterIndex) {
+                currentChapterIndex = allSentences[target].chapterIndex;
+                updateChapterUI();
+            }
+            currentSentenceIndex = target;
+            if (isPlaying) setTimeout(() => speakCurrentSentence(), 60);
+            else { highlightSentence(currentSentenceIndex); scrollToSentence(currentSentenceIndex); updateProgressUI(); }
+        }
+
+        function jumpToSentence(index) {
+            if (allSentences.length === 0) return;
+            let target = index;
+            while (target < allSentences.length && allSentences[target].isParagraphBreak) target++;
+            if (target >= allSentences.length) target = allSentences.length - 1;
+            while (target >= 0 && allSentences[target].isParagraphBreak) target--;
+            if (target < 0) target = 0;
+            speechSynthesis.cancel();
+            currentSentenceIndex = target;
+            if (allSentences[target].chapterIndex !== currentChapterIndex && allSentences[target].chapterIndex >= 0) {
+                currentChapterIndex = allSentences[target].chapterIndex;
+                updateChapterUI();
+            }
+            highlightSentence(currentSentenceIndex);
+            scrollToSentence(currentSentenceIndex);
+            updateProgressUI();
+            if (isPlaying) setTimeout(() => speakCurrentSentence(), 60);
+        }
+
+        function goToPrevChapter() {
+            if (chapters.length === 0 || currentChapterIndex <= 0) { showToast('已经是第一章'); return; }
+            speechSynthesis.cancel();
+            currentChapterIndex--;
+            updateChapterUI();
+            currentSentenceIndex = chapters[currentChapterIndex].startIndex;
+            while (currentSentenceIndex < allSentences.length && allSentences[currentSentenceIndex].isParagraphBreak) currentSentenceIndex++;
+            highlightSentence(currentSentenceIndex);
+            scrollToSentence(currentSentenceIndex);
+            updateProgressUI();
+            if (isPlaying) setTimeout(() => speakCurrentSentence(), 60);
+        }
+
+        function goToNextChapter() {
+            if (chapters.length === 0 || currentChapterIndex >= chapters.length - 1) { showToast('已经是最后一章'); return; }
+            speechSynthesis.cancel();
+            currentChapterIndex++;
+            updateChapterUI();
+            currentSentenceIndex = chapters[currentChapterIndex].startIndex;
+            while (currentSentenceIndex < allSentences.length && allSentences[currentSentenceIndex].isParagraphBreak) currentSentenceIndex++;
+            highlightSentence(currentSentenceIndex);
+            scrollToSentence(currentSentenceIndex);
+            updateProgressUI();
+            if (isPlaying) setTimeout(() => speakCurrentSentence(), 60);
+        }
+
+        function cycleSpeed() {
+            const speeds = [0.6, 0.8, 1.0, 1.2, 1.5, 1.8, 2.0, 0.4];
+            const current = Math.round(speechRate * 100) / 100;
+            let nextIndex = speeds.findIndex(s => Math.abs(s - current) < 0.01);
+            if (nextIndex < 0) nextIndex = speeds.indexOf(1.0);
+            if (nextIndex < 0) nextIndex = 2;
+            nextIndex = (nextIndex + 1) % speeds.length;
+            speechRate = speeds[nextIndex];
+            speedSlider.value = speechRate;
+            updateSpeedUI(); savePreferences();
+            if (isPlaying && !isPaused) restartCurrentUtterance();
+            showToast(`语速: ${speechRate.toFixed(1)}x`);
+        }
+
+        function updatePlayButtonUI() {
+            if (isPlaying && !isPaused) {
+                btnPlay.textContent = '⏸️';
+                btnPlay.classList.add('paused-state');
+            } else {
+                btnPlay.textContent = '▶️';
+                btnPlay.classList.remove('paused-state');
+            }
+        }
+
+        function updateSpeedUI() {
+            speedIndicator.textContent = speechRate.toFixed(1) + 'x';
+            speedValue.textContent = speechRate.toFixed(1) + 'x';
+            speedSlider.value = speechRate;
+            totalEstimatedDuration = estimateTotalDuration();
+            updateProgressUI();
+        }
+
+        function updateVolumeUI() {
+            volumeValue.textContent = Math.round(speechVolume * 100) + '%';
+            volumeSlider.value = speechVolume;
+        }
+
+        function updatePitchUI() {
+            pitchValue.textContent = speechPitch.toFixed(1);
+            pitchSlider.value = speechPitch;
+        }
+
+        // 设置面板
+        function openSettings() {
+            settingsPanel.classList.add('open');
+            settingsOverlay.classList.add('open');
+            populateVoiceSelect();
+            updateSleepTimerUI();
+        }
+
+        function closeSettings() {
+            settingsPanel.classList.remove('open');
+            settingsOverlay.classList.remove('open');
+        }
+
+        function setSleepTimer(minutes) {
+            sleepTimerMinutes = minutes;
+            savePreferences();
+            updateSleepTimerUI();
+            if (minutes > 0) {
+                sleepTimerEndTime = Date.now() + minutes * 60 * 1000;
+                startSleepCountdown();
+                showToast(`⏰ 将在 ${minutes} 分钟后自动停止`);
+            } else {
+                sleepTimerEndTime = null;
+                stopSleepCountdown();
+                showToast('定时关闭已取消');
+            }
+        }
+
+        function startSleepCountdown() {
+            stopSleepCountdown();
+            if (sleepTimerMinutes <= 0) return;
+            sleepCountdown.classList.remove('hidden');
+            updateSleepCountdownDisplay();
+            sleepTimerInterval = setInterval(() => {
+                updateSleepCountdownDisplay();
+                if (sleepTimerEndTime && Date.now() >= sleepTimerEndTime && isPlaying) {
+                    stopPlayback();
+                    setSleepTimer(0);
+                    showToast('⏰ 定时关闭');
+                }
+            }, 10000);
+        }
+
+        function stopSleepCountdown() {
+            if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+            sleepTimerInterval = null;
+            sleepCountdown.classList.add('hidden');
+        }
+
+        function updateSleepCountdownDisplay() {
+            if (!sleepTimerEndTime || sleepTimerMinutes <= 0) {
+                sleepCountdown.classList.add('hidden');
+                return;
+            }
+            const remaining = Math.max(0, Math.round((sleepTimerEndTime - Date.now()) / 1000));
+            const mins = Math.floor(remaining / 60);
+            const secs = remaining % 60;
+            sleepCountdown.textContent = `⏰ 剩余 ${mins}分${secs}秒 自动停止`;
+            sleepCountdown.classList.remove('hidden');
+            if (remaining <= 0) sleepCountdown.classList.add('hidden');
+        }
+
+        function updateSleepTimerUI() {
+            const chips = sleepTimerOptions.querySelectorAll('.sleep-timer-chip');
+            chips.forEach(chip => {
+                const mins = parseInt(chip.dataset.minutes);
+                chip.classList.toggle('active', mins === sleepTimerMinutes);
+            });
+            if (sleepTimerMinutes > 0 && isPlaying) startSleepCountdown();
+            else if (sleepTimerMinutes <= 0) stopSleepCountdown();
+        }
+
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            updateThemeUI();
+            savePreferences();
+        }
+
+        function updateThemeUI() {
+            if (isDarkMode) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                btnTheme.textContent = '☀️';
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                btnTheme.textContent = '🌙';
+            }
+        }
+
+        function cycleFontSize() {
+            fontSizeStep = (fontSizeStep + 1) % fontSizes.length;
+            updateFontSizeUI();
+            savePreferences();
+        }
+
+        function updateFontSizeUI() {
+            const size = fontSizes[Math.min(fontSizeStep, fontSizes.length - 1)];
+            textDisplayArea.style.fontSize = size + 'px';
+            document.documentElement.style.setProperty('--font-size', size + 'px');
+        }
+
+        async function requestWakeLock() {
+            if (wakeLock) return;
+            try {
+                if ('wakeLock' in navigator && navigator.wakeLock.request) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => { wakeLock = null; });
+                }
+            } catch (e) {}
+        }
+
+        async function releaseWakeLock() {
+            if (wakeLock) {
+                try { await wakeLock.release(); } catch (e) {}
+                wakeLock = null;
+            }
+        }
+
+        let toastTimeout;
+        function showToast(message) {
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toast.textContent = message;
+            toast.classList.add('show');
+            toastTimeout = setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        // 启动
+        init();
+
+        window.tingShu = {
+            getAllSentences: () => allSentences,
+            getChapters: () => chapters,
+            getState: () => ({ isPlaying, isPaused, currentChapterIndex, currentSentenceIndex, speechRate, speechVolume, speechPitch }),
+            jumpTo: jumpToSentence,
+            showToast,
+        };
+
+        console.log('📖 多格式听书应用已就绪');
+        console.log('  - 支持格式：TXT、DOCX、PDF（以及部分 DOC）');
+        console.log('  - 空格键 播放/暂停');
+        console.log('  - 左右箭头 上一句/下一句');
+        console.log('  - ESC 停止播放');
+    })();
+</script>
+</body>
+</html>
